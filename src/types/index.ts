@@ -90,12 +90,26 @@ export interface EmailResult {
   note: string
 }
 
+export type SentimentLabel = 'positive' | 'neutral' | 'negative'
+
+export interface EmailTemplate {
+  id: string
+  name: string
+  subject: string
+  body: string
+}
+
+export type SentimentTemplateMap = Partial<
+  Record<SentimentLabel, { subject: string; body: string }>
+>
+
 export interface SendEmailsPayload {
   calls: CallDetail[]
   timezone: string
   senderName: string
   token: string
   contactListId: string
+  sentimentTemplates: SentimentTemplateMap
 }
 
 export interface SendEmailsResponse {

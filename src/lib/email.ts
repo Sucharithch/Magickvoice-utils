@@ -52,52 +52,6 @@ export function buildEmailBody(
   </html>`
 }
 
-export function buildWebinarEmail(
-  recipientFirstName: string,
-  senderName: string
-): string {
-  return `
-  <html>
-  <body style="font-family:Arial,sans-serif;color:#333;padding:30px;background:#f4f4f4">
-    <div style="max-width:600px;margin:auto;background:#fff;border-radius:8px;padding:36px;border:1px solid #e5e7eb">
-      <p style="margin-bottom:16px;font-size:15px">Hi ${recipientFirstName},</p>
-      <p style="line-height:1.7;margin-bottom:16px">
-        Thank you for registering for <strong>"Future-Ready Data Foundation: From AI Pilot to Production Value."</strong>
-        Your access is confirmed.
-      </p>
-      <p style="line-height:1.7;margin-bottom:16px">
-        Watch on demand anytime until 31 May 2026:<br/>
-        <a href="https://www.thinkartha.com/events/future-ready-data-foundation-from-ai-pilot-to-production-value/"
-           style="color:#7c3aed;word-break:break-all">
-          https://www.thinkartha.com/events/future-ready-data-foundation-from-ai-pilot-to-production-value/
-        </a>
-      </p>
-      <p style="line-height:1.7;margin-bottom:16px">
-        In this session, you'll hear from Stewart Bond (IDC), Srinivas Poddutoori (Artha Solutions), Madhav Nalla and
-        Sidney Drill (Qlik) on how to move AI from pilot to production with a trusted, AI-ready data foundation —
-        plus a clear 90-day roadmap with a 9-month follow-up action plan.
-      </p>
-      <div style="background:#f5f3ff;border-left:4px solid #7c3aed;padding:14px 18px;border-radius:4px;margin-bottom:20px">
-        <p style="margin:0;line-height:1.7">
-          <strong>Exclusive for registrants:</strong> Claim our AI Data Readiness Assessment (worth $15,999) for just $1 —
-          a real assessment backed by international frameworks and expert consultants.
-        </p>
-      </div>
-      <p style="line-height:1.7;margin-bottom:16px">
-        Questions? Just reply to this email and we'll be happy to help.
-      </p>
-      <p style="line-height:1.7;margin-bottom:24px">Thanks again for joining us.</p>
-      <p style="line-height:1.8;margin:0">
-        Best regards,<br/>
-        <strong>${senderName}</strong><br/>
-        Artha Solutions<br/>
-        <a href="https://www.thinkartha.com" style="color:#7c3aed">www.thinkartha.com</a>
-      </p>
-    </div>
-  </body>
-  </html>`
-}
-
 export async function sendEmail(
   to: string,
   subject: string,

@@ -1,7 +1,13 @@
 'use client'
 
 import { useState } from 'react'
-import type { CallDetail, EmailResult } from '@/types'
+import type {
+  CallDetail,
+  EmailResult,
+  EmailTemplate,
+  SentimentLabel,
+  SentimentTemplateMap,
+} from '@/types'
 
 interface EmailTabProps {
   calls: CallDetail[]
@@ -9,7 +15,8 @@ interface EmailTabProps {
   results: EmailResult[] | null
   loading: boolean
   error: string | null
-  onSendEmails: (senderName: string) => void
+  templates: EmailTemplate[]
+  onSendEmails: (senderName: string, map: SentimentTemplateMap) => void
 }
 
 const STATUS_LABEL: Record<EmailResult['status'], string> = {
@@ -32,9 +39,12 @@ const SENTIMENT_COLOR: Record<string, string> = {
   neutral: 'text-yellow-400',
 }
 
-const SENDER_OPTIONS = [
-  'Srinivas Poddutoori',
-  'Artha Solutions Team',
+const SENDER_OPTIONS = ['Srinivas Poddutoori', 'Artha Solutions Team']
+
+const SENTIMENTS: { key: SentimentLabel; label: string }[] = [
+  { key: 'positive', label: 'Positive' },
+  { key: 'neutral', label: 'Neutral' },
+  { key: 'negative', label: 'Negative' },
 ]
 
 export default function EmailTab({
@@ -42,13 +52,51 @@ export default function EmailTab({
   results,
   loading,
   error,
+  templates,
   onSendEmails,
 }: EmailTabProps) {
   const [senderName, setSenderName] = useState('')
   const [customName, setCustomName] = useState('')
 
-  const activeSenderName = senderName === '__custom__' ? customName.trim() : senderName
-  const canSend = !loading && calls.length > 0 && activeSenderName.length > 0
+  const [enabled, setEnabled] = useState<Record<SentimentLabel, boolean>>({
+    positive: true,
+    neutral: false,
+    negative: false,
+  })
+
+  const [templateBySentiment, setTemplateBySentiment] = useState<
+    Record<SentimentLabel, string>
+  >({
+    positive: '',
+    neutral: '',
+    negative: '',
+  })
+
+  const activeSenderName =
+    senderName === '__custom__' ? customName.trim() : senderName
+
+  const enabledList = SENTIMENTS.filter(s => enabled[s.key])
+  const allEnabledHaveTemplates =
+    enabledList.length > 0 &&
+    enabledList.every(s => {
+      const id = templateBySentiment[s.key]
+      return id && templates.some(t => t.id === id)
+    })
+
+  const canSend =
+    !loading &&
+    calls.length > 0 &&
+    activeSenderName.length > 0 &&
+    allEnabledHaveTemplates
+
+  const handleSend = () => {
+    const map: SentimentTemplateMap = {}
+    for (const s of enabledList) {
+      const tpl = templates.find(t => t.id === templateBySentiment[s.key])
+      if (tpl) map[s.key] = { subject: tpl.subject, body: tpl.body }
+    }
+    onSendEmails(activeSenderName, map)
+  }
 
   const sentCount = results?.filter(r => r.status === 'sent').length ?? 0
   const positiveCount =
@@ -63,10 +111,12 @@ export default function EmailTab({
       {!results && (
         <div className="bg-[#1a1a1a] border border-gray-800 rounded-lg p-5 mb-6">
           <p className="text-sm text-gray-400 mb-4">
-            Choose your name for the <span className="text-white font-medium">Best regards</span> signature,
-            then send the webinar confirmation email to all positive-sentiment calls with a captured address.
+            Pick the sentiments you want to email, assign a template to each,
+            then click <span className="text-white font-medium">Send</span>.
           </p>
-          <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-end">
+
+          {/* Sender */}
+          <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-end mb-5">
             <div className="flex-1">
               <label className="block text-xs text-gray-500 mb-1.5 uppercase tracking-wider">
                 Sender Name
@@ -78,7 +128,9 @@ export default function EmailTab({
               >
                 <option value="">— Select your name —</option>
                 {SENDER_OPTIONS.map(name => (
-                  <option key={name} value={name}>{name}</option>
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
                 ))}
                 <option value="__custom__">Other (type below)…</option>
               </select>
@@ -98,25 +150,76 @@ export default function EmailTab({
                 />
               </div>
             )}
-
-            <button
-              onClick={() => onSendEmails(activeSenderName)}
-              disabled={!canSend}
-              className="bg-purple-600 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold px-5 py-2 rounded transition-colors whitespace-nowrap"
-            >
-              {loading ? (
-                <span className="flex items-center gap-2">
-                  <span className="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
-                  Sending…
-                </span>
-              ) : (
-                '📧 Send Emails'
-              )}
-            </button>
           </div>
+
+          {/* Sentiment matrix */}
+          <div className="mb-5">
+            <p className="text-xs text-gray-500 mb-2 uppercase tracking-wider">
+              Sentiments &amp; Templates
+            </p>
+            <div className="border border-gray-800 rounded overflow-hidden">
+              {SENTIMENTS.map((s, i) => (
+                <div
+                  key={s.key}
+                  className={`flex items-center gap-3 px-3 py-2.5 ${
+                    i > 0 ? 'border-t border-gray-800' : ''
+                  } ${enabled[s.key] ? 'bg-[#161616]' : ''}`}
+                >
+                  <label className="flex items-center gap-2 w-32 text-sm text-gray-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={enabled[s.key]}
+                      onChange={e =>
+                        setEnabled({ ...enabled, [s.key]: e.target.checked })
+                      }
+                      className="accent-purple-500"
+                    />
+                    <span className={SENTIMENT_COLOR[s.key]}>{s.label}</span>
+                  </label>
+                  <select
+                    value={templateBySentiment[s.key]}
+                    onChange={e =>
+                      setTemplateBySentiment({
+                        ...templateBySentiment,
+                        [s.key]: e.target.value,
+                      })
+                    }
+                    disabled={!enabled[s.key]}
+                    className="flex-1 bg-[#111] border border-gray-700 text-white rounded px-3 py-1.5 text-sm focus:outline-none focus:border-purple-500 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <option value="">— Select a template —</option>
+                    {templates.map(t => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+            </div>
+            {templates.length === 0 && (
+              <p className="text-xs text-yellow-500 mt-2">
+                No templates yet — create one in the Templates tab.
+              </p>
+            )}
+          </div>
+
+          <button
+            onClick={handleSend}
+            disabled={!canSend}
+            className="bg-purple-600 hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-semibold px-5 py-2 rounded transition-colors"
+          >
+            {loading ? (
+              <span className="flex items-center gap-2">
+                <span className="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+                Sending…
+              </span>
+            ) : (
+              '📧 Send Emails'
+            )}
+          </button>
         </div>
       )}
-
 
       {error && (
         <div className="bg-red-900/30 border border-red-700 text-red-300 rounded-lg px-4 py-3 mb-5 text-sm">

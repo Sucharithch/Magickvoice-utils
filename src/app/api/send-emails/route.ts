@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { format } from 'date-fns-tz'
-import { buildWebinarEmail, sendEmail } from '@/lib/email'
+import { sendEmail } from '@/lib/email'
 import { fetchContactList, normalizePhone } from '@/lib/magickvoice'
-import type { SendEmailsPayload, EmailResult, ContactRow } from '@/types'
+import { renderTemplate, buildEmailShell } from '@/lib/templates'
+import type {
+  SendEmailsPayload,
+  EmailResult,
+  ContactRow,
+  SentimentLabel,
+} from '@/types'
 
 export const runtime = 'nodejs'
 
@@ -15,16 +21,31 @@ function localTime(raw: string | undefined, tz: string): string {
   }
 }
 
+const KNOWN_SENTIMENTS: SentimentLabel[] = ['positive', 'neutral', 'negative']
+
 export async function POST(request: NextRequest) {
   try {
     const body: SendEmailsPayload = await request.json()
-    const { calls, timezone, senderName, token, contactListId } = body
+    const {
+      calls,
+      timezone,
+      senderName,
+      token,
+      contactListId,
+      sentimentTemplates,
+    } = body
 
     if (!token) {
       return NextResponse.json({ error: 'Missing bearer token' }, { status: 400 })
     }
     if (!contactListId) {
       return NextResponse.json({ error: 'Missing contact list ID' }, { status: 400 })
+    }
+    if (!sentimentTemplates || Object.keys(sentimentTemplates).length === 0) {
+      return NextResponse.json(
+        { error: 'No sentiment templates selected' },
+        { status: 400 }
+      )
     }
 
     const contactList = await fetchContactList(token, contactListId)
@@ -42,27 +63,39 @@ export async function POST(request: NextRequest) {
       const phone = call.recipient_phone ?? '—'
       const created = localTime(call.created_at, timezone)
       const analysis = call.call_analysis ?? {}
-      const sentiment = analysis.common?.overall_sentiment?.label ?? ''
+      const sentimentRaw = analysis.common?.overall_sentiment?.label ?? ''
+      const sentiment = sentimentRaw.toLowerCase() as SentimentLabel
+      const isKnown = KNOWN_SENTIMENTS.includes(sentiment)
 
       const contact = contactByPhone.get(normalizePhone(call.recipient_phone))
       const email = contact?.mail ?? ''
-      const fullName =
-        call.recipient_name ?? contact?.contact_name ?? ''
-      const recipientFirstName = fullName.trim().split(/\s+/)[0] || 'there'
+      const fullName = contact?.contact_name ?? call.recipient_name ?? ''
+      const firstName = fullName.trim().split(/\s+/)[0] || 'there'
+
+      const template = isKnown ? sentimentTemplates[sentiment] : undefined
 
       let status: EmailResult['status']
       let note: string
 
-      if (sentiment !== 'positive') {
+      if (!template) {
         status = 'skipped'
-        note = `Sentiment is '${sentiment || 'N/A'}' — not positive`
+        note = `Sentiment '${sentimentRaw || 'N/A'}' not selected for sending`
       } else if (!email) {
         status = 'no-email'
         note = 'No matching contact in contact list for this phone'
       } else {
         try {
-          const html = buildWebinarEmail(recipientFirstName, senderName)
-          const subject = 'Your Access is Confirmed – Future-Ready Data Foundation'
+          const vars: Record<string, string> = {
+            first_name: firstName,
+            full_name: fullName || 'there',
+            company: contact?.company_name ?? '',
+            role: contact?.contact_role ?? '',
+            sender: senderName,
+            registration_url: contact?.registration_url ?? '',
+          }
+          const subject = renderTemplate(template.subject, vars, false)
+          const renderedBody = renderTemplate(template.body, vars, true)
+          const html = buildEmailShell(renderedBody)
           await sendEmail(email, subject, html)
           status = 'sent'
           note = `Delivered to ${email}`
@@ -77,7 +110,7 @@ export async function POST(request: NextRequest) {
         call_id: callId,
         phone,
         created,
-        sentiment: sentiment || 'N/A',
+        sentiment: sentimentRaw || 'N/A',
         email: email || '—',
         status,
         note,

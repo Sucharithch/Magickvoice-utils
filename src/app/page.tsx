@@ -1,12 +1,20 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Sidebar from '@/components/Sidebar'
 import CallsTab from '@/components/CallsTab'
 import EmailTab from '@/components/EmailTab'
-import type { CallDetail, EmailResult, FetchCallsPayload } from '@/types'
+import TemplatesTab from '@/components/TemplatesTab'
+import { loadTemplates, saveTemplates } from '@/lib/templates'
+import type {
+  CallDetail,
+  EmailResult,
+  EmailTemplate,
+  FetchCallsPayload,
+  SentimentTemplateMap,
+} from '@/types'
 
-type Tab = 'calls' | 'emails'
+type Tab = 'calls' | 'emails' | 'templates'
 
 export default function Home() {
   const [calls, setCalls] = useState<CallDetail[] | null>(null)
@@ -23,6 +31,18 @@ export default function Home() {
   const [currentConfig, setCurrentConfig] = useState<FetchCallsPayload | null>(
     null
   )
+  const [templates, setTemplates] = useState<EmailTemplate[]>([])
+  const [templatesReady, setTemplatesReady] = useState(false)
+
+  useEffect(() => {
+    setTemplates(loadTemplates())
+    setTemplatesReady(true)
+  }, [])
+
+  const updateTemplates = (next: EmailTemplate[]) => {
+    setTemplates(next)
+    saveTemplates(next)
+  }
 
   const handleRun = async (config: FetchCallsPayload) => {
     setLoading(true)
@@ -51,7 +71,10 @@ export default function Home() {
     }
   }
 
-  const handleSendEmails = async (senderName: string) => {
+  const handleSendEmails = async (
+    senderName: string,
+    sentimentTemplates: SentimentTemplateMap
+  ) => {
     if (!calls || !currentConfig) return
     setEmailing(true)
     setEmailError(null)
@@ -66,6 +89,7 @@ export default function Home() {
           senderName,
           token: currentConfig.token,
           contactListId: currentConfig.contactListId,
+          sentimentTemplates,
         }),
       })
       const data = await res.json()
@@ -81,24 +105,58 @@ export default function Home() {
   const tabs: { id: Tab; label: string }[] = [
     { id: 'calls', label: '📋 Fetched Call Details' },
     { id: 'emails', label: '📧 Email Results' },
+    { id: 'templates', label: '✉️ Email Templates' },
   ]
+
+  const hasRunData = !!(calls && currentConfig)
+  const tabNavVisible = hasRunData || activeTab === 'templates' || templatesReady
 
   return (
     <div className="flex min-h-screen">
       <Sidebar onRun={handleRun} loading={loading} />
 
       <main className="flex-1 p-8 overflow-auto min-h-screen">
-        {/* Idle state */}
-        {!calls && !loading && !error && (
-          <div className="flex items-center justify-center h-full min-h-[70vh]">
-            <div className="text-center">
-              <p className="text-4xl mb-4">📞</p>
-              <p className="text-gray-400 text-sm">
-                Configure the inputs in the sidebar and click{' '}
-                <strong className="text-white">Run</strong> to start.
-              </p>
+        {/* Idle state (only if templates tab not selected) */}
+        {!calls && !loading && !error && activeTab !== 'templates' && (
+          <>
+            {/* Tab nav still shown so user can hop to Templates */}
+            {tabNavVisible && (
+              <div className="flex border-b border-gray-800 mb-6">
+                {tabs.map(tab => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`px-5 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+                      activeTab === tab.id
+                        ? 'border-purple-500 text-purple-400'
+                        : 'border-transparent text-gray-400 hover:text-white hover:border-gray-600'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="flex items-center justify-center h-full min-h-[60vh]">
+              <div className="text-center">
+                <p className="text-4xl mb-4">📞</p>
+                <p className="text-gray-400 text-sm">
+                  Configure the inputs in the sidebar and click{' '}
+                  <strong className="text-white">Run</strong> to start.
+                </p>
+                <p className="text-gray-600 text-xs mt-3">
+                  You can edit email templates anytime in the{' '}
+                  <button
+                    onClick={() => setActiveTab('templates')}
+                    className="underline text-purple-400 hover:text-purple-300"
+                  >
+                    Templates tab
+                  </button>
+                  .
+                </p>
+              </div>
             </div>
-          </div>
+          </>
         )}
 
         {/* Loading state */}
@@ -121,11 +179,11 @@ export default function Home() {
           </div>
         )}
 
-        {/* Results */}
-        {calls && currentConfig && (
+        {/* When we have data OR templates tab active: render tab bar + content */}
+        {(hasRunData || activeTab === 'templates') && (
           <>
             {/* Stats bar */}
-            {fetchStats && (
+            {hasRunData && fetchStats && (
               <div className="flex items-center gap-4 mb-5 text-sm">
                 <span className="text-gray-500">
                   Total in account:{' '}
@@ -141,39 +199,54 @@ export default function Home() {
 
             {/* Tab navigation */}
             <div className="flex border-b border-gray-800 mb-6">
-              {tabs.map(tab => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`px-5 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
-                    activeTab === tab.id
-                      ? 'border-purple-500 text-purple-400'
-                      : 'border-transparent text-gray-400 hover:text-white hover:border-gray-600'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
+              {tabs.map(tab => {
+                const requiresData = tab.id !== 'templates'
+                const disabled = requiresData && !hasRunData
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => !disabled && setActiveTab(tab.id)}
+                    disabled={disabled}
+                    className={`px-5 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+                      activeTab === tab.id
+                        ? 'border-purple-500 text-purple-400'
+                        : disabled
+                        ? 'border-transparent text-gray-700 cursor-not-allowed'
+                        : 'border-transparent text-gray-400 hover:text-white hover:border-gray-600'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                )
+              })}
             </div>
 
             {/* Tab content */}
-            {activeTab === 'calls' && (
+            {activeTab === 'calls' && hasRunData && currentConfig && (
               <CallsTab
-                calls={calls}
+                calls={calls!}
                 timezone={currentConfig.timezone}
                 total={fetchStats?.total ?? 0}
                 filtered={fetchStats?.filtered ?? 0}
               />
             )}
 
-            {activeTab === 'emails' && (
+            {activeTab === 'emails' && hasRunData && currentConfig && (
               <EmailTab
-                calls={calls}
+                calls={calls!}
                 timezone={currentConfig.timezone}
                 results={emailResults}
                 loading={emailing}
                 error={emailError}
+                templates={templates}
                 onSendEmails={handleSendEmails}
+              />
+            )}
+
+            {activeTab === 'templates' && templatesReady && (
+              <TemplatesTab
+                templates={templates}
+                onChange={updateTemplates}
               />
             )}
           </>
